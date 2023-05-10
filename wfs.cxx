@@ -42,40 +42,15 @@
 err_t
 wfs_open(struct wfs_file *file, const char *name, int n_params, char **params, char **values)
 {
-  const struct fsdata_file *f;
-
   if ((file == NULL) || (name == NULL)) {
     return ERR_ARG;
   }
 
-#if LWIP_HTTPD_CUSTOM_FILES
   if (wfs_open_custom(file, name, n_params, params, values)) {
     file->flags |= FS_FILE_FLAGS_CUSTOM;
     return ERR_OK;
   }
-#endif /* LWIP_HTTPD_CUSTOM_FILES */
 
-#if 0
-  for (f = FS_ROOT; f != NULL; f = f->next) {
-    if (!strcmp(name, (const char *)f->name)) {
-      file->data = (const char *)f->data;
-      file->len = f->len;
-      file->index = f->len;
-      file->flags = f->flags;
-#if HTTPD_PRECALCULATED_CHECKSUM
-      file->chksum_count = f->chksum_count;
-      file->chksum = f->chksum;
-#endif /* HTTPD_PRECALCULATED_CHECKSUM */
-#if LWIP_HTTPD_FILE_EXTENSION
-      file->pextension = NULL;
-#endif /* LWIP_HTTPD_FILE_EXTENSION */
-#if LWIP_HTTPD_FILE_STATE
-      file->state = fs_state_init(file, name);
-#endif /* #if LWIP_HTTPD_FILE_STATE */
-      return ERR_OK;
-    }
-  }
-#endif
   /* file not found */
   return ERR_VAL;
 }
@@ -84,11 +59,9 @@ wfs_open(struct wfs_file *file, const char *name, int n_params, char **params, c
 void
 wfs_close(struct wfs_file *file)
 {
-#if LWIP_HTTPD_CUSTOM_FILES
   if ((file->flags & FS_FILE_FLAGS_CUSTOM) != 0) {
     wfs_close_custom(file);
   }
-#endif /* LWIP_HTTPD_CUSTOM_FILES */
 #if LWIP_HTTPD_FILE_STATE
   fs_state_free(file, file->state);
 #endif /* #if LWIP_HTTPD_FILE_STATE */

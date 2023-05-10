@@ -12,6 +12,8 @@ extern "C" {
 
 const char * micro_tz_db_get_posix_str(const char * name);
 
+const char * micro_tz_db_get_safe_name(const char * name);
+
 int micro_tz_db_get_zone_count();
 
 const char *micro_tz_db_get_zone(int index);

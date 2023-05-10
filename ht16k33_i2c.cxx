@@ -36,9 +36,7 @@
 // 0x70 and 0x77 to allow multiple devices to be used.
 static const int I2C_addr = 0x70;
 
-
 // commands
-
 
 #define HT16K33_SYSTEM_STANDBY  0x20
 #define HT16K33_SYSTEM_RUN      0x21
@@ -81,14 +79,16 @@ static const int16_t alpha[] = {
 }
 
 /* Quick helper function for single byte transfers */
-static void i2c_write_byte(uint8_t val) {
+static void i2c_write_byte(uint8_t val)
+{
 #ifdef i2c_default
     i2c_write_blocking(i2c_default, I2C_addr, &val, 1, false);
 #endif
 }
 
 
-void ht16k33_init() {
+void ht16k33_init()
+{
     // This example will use I2C0 on the default SDA and SCL pins (4, 5 on a Pico)
     i2c_init(i2c_default, 100 * 1000);
     gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
@@ -133,25 +133,30 @@ void ht16k33_scroll_string(const char *str, int interval_ms)
 {
     int l = strlen(str);
 
-    if (l <= NUM_DIGITS) {
+    if (l <= NUM_DIGITS)
+    {
         ht16k33_display_string(str);
     }
-    else {
-        for (int i = 0; i < l - NUM_DIGITS + 1; i++) {
+    else
+    {
+        for (int i = 0; i < l - NUM_DIGITS + 1; i++)
+        {
             ht16k33_display_string(&str[i]);
             sleep_ms(interval_ms);
         }
     }
 }
 
-void ht16k33_set_brightness(int bright)
+void ht16k33_set_brightness(unsigned int bright)
 {
     i2c_write_byte(HT16K33_BRIGHTNESS | (bright <= 15 ? bright : 15));
 }
 
-void ht16k33_set_blink(int blink) {
+void ht16k33_set_blink(int blink)
+{
     int s = 0;
-    switch (blink) {
+    switch (blink)
+    {
         default: break;
         case 1: s = HT16K33_BLINK_2HZ; break;
         case 2: s = HT16K33_BLINK_1HZ; break;
@@ -159,6 +164,11 @@ void ht16k33_set_blink(int blink) {
     }
 
     i2c_write_byte(HT16K33_DISPLAY_SETUP | HT16K33_DISPLAY_ON | s);
+}
+
+void ht16k33_set_display_on(bool on)
+{
+    i2c_write_byte(HT16K33_DISPLAY_SETUP | (on ? HT16K33_DISPLAY_ON : HT16K33_DISPLAY_OFF));
 }
 
 #if 0

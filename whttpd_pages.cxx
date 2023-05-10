@@ -37,16 +37,21 @@
  *
  */
 
+#include "ht16k33.h"
 #include "timegm.h"
 #include "localtime.h"
+#include "ota.h"
+#include "preferences.h"
 #include "zones.h"
 
 #include "lwip/opt.h"
 
 #include "wfs.h"
 #include "whttpd_structs.h"
+#include "hardware/watchdog.h"
 #include "lwip/def.h"
 #include "lwip/mem.h"
+#include "pico/time.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -65,7 +70,7 @@
 #error This needs LWIP_HTTPD_DYNAMIC_HEADERS
 #endif
 
-static const char generated_html[] = R"!(<html>
+static const char index_page[] = R"!(<html>
 	<head>
 		<meta http-equiv="content-type" content="text/html; charset=utf-8" />
         <!-- <meta name="viewport" content="width=device-width, initial-scale=1.0"/> -->
@@ -80,6 +85,7 @@ function update_state()
         {
             let state = JSON.parse(xhr.response);
             timeval.innerHTML = state.time;
+            weekday.innerHTML = state.weekday;
             zoneval.innerHTML = state.zone;
         }
     }
@@ -87,6 +93,67 @@ function update_state()
     xhr.send();
 }
 setInterval(update_state, 1000);
+        </script>
+        <style>
+body, textarea, button {font-family: arial, sans-serif;}
+h1 { text-align: center; }
+.tabcenter { margin-left: auto; margin-right: auto; }
+button { border: 0; border-radius: 0.3rem; background:#1fa3ec; color:#ffffff; line-height:2.4rem; font-size:1.2rem; width:180px;
+-webkit-transition-duration:0.4s;transition-duration:0.4s;cursor:pointer;}
+button:hover{background:#0b73aa;}
+#state { line-height:2.4rem; font-size:1.2rem; text-align: center; }
+.acenter { text-align: center; }
+.cb { border: 0; border-radius: 0.3rem; font-family: arial, sans-serif; color: black; line-height:2.4rem; font-size:1.2rem;}
+        </style>
+	</head>
+	<body>
+		<h1>Clock</h1>
+        <table class="tabcenter">
+            <tr><td id="state"><b id="zoneval"></b></td></tr>
+            <tr><td id="state"><b id="weekday"></b></td></tr>
+            <tr><td id="state"><b id="timeval"></b></td></tr>
+            <tr><td class="acenter"><a href="/settings.html">Settings</a></td></tr>
+        </table>
+	</body>
+</html>)!";
+
+static const char settings_page[] = R"!(
+<html>
+	<head>
+		<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+        <!-- <meta name="viewport" content="width=device-width, initial-scale=1.0"/> -->
+		<title>Clock Settings</title>
+        <script>
+function newzone()
+{
+}
+function update_zones()
+{
+    var xhr = new XMLHttpRequest();
+    xhr.onreadystatechange = () => 
+    {
+        if (xhr.readyState === 4) 
+        {
+            let zones = JSON.parse(xhr.response);
+            let current = "";
+            for (let zone of zones)            
+            {
+                if (zone.startsWith("*"))
+                {
+                    zone = zone.slice(1);
+                    current = zone;
+                }
+                zoneSelect.add(new Option(zone, zone));
+            }
+            if (current != "")
+            {
+                zoneSelect.value = current;
+            }
+        }
+    }
+    xhr.open("GET", '/zones');
+    xhr.send();
+}
         </script>
         <style>
 body, textarea, button {font-family: arial, sans-serif;}
@@ -100,30 +167,84 @@ button:hover{background:#0b73aa;}
 .cb { border: 0; border-radius: 0.3rem; font-family: arial, sans-serif; color: black; line-height:2.4rem; font-size:1.2rem;}
         </style>
 	</head>
-	<body">
-		<h1>Clock</h1>
+	<body onload="update_zones()">
+		<h1>Clock Settings</h1>
         <table class="tabcenter">
-            <tr><td id="state"><b id="zoneval"></b></td></tr>
-            <tr><td id="state"><b id="timeval"></b></td></tr>
+        <tr>
+        <td>
+            <select id="zoneSelect" onchange="newzone()">
+            </select>
+        </td>
+        </tr>
         </table>
 	</body>
-</html>)!";
+</html>
+)!";
+
+static const char restart_page_head[] = R"!(
+<html>
+<head>
+	<title>Rebooting</title>
+    <script>
+        const id = setInterval(ping, 1000);
+        let controller = null;
+
+        function ping()
+        {
+            if (controller != null)
+            {
+                controller.abort();
+            }
+            controller = new AbortController();
+            fetch('/', { signal: controller.signal })
+                .then(response => response.text())
+                .then(function(data) { clearInterval(id); window.location.href = '/'; })
+                .catch((error) => { console.error('Error:', error); });
+        };
+
+        ping();
+    </script>
+<style>
+body, p {font-family: arial, sans-serif;}
+p { line-height:2.4rem; font-size:1.2rem; }
+</style>
+</head>
+<body><p>
+    )!";
+
+static const char restart_page_tail[] = "</p></body></html>\n";
+
+static int64_t reset_now(alarm_id_t, void *)
+{
+    watchdog_reboot(0, 0, 0);
+    while(1);
+}
+
+static const char *weekday_string(int wday)
+{
+    static const char *wdays[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+    if (wday < 0 || wday > 6)
+    {
+        return "";
+    }
+    return wdays[wday];
+}
 
 int wfs_open_custom(struct wfs_file *file, const char *name, int n_params, char **params, char **values)
 {
-    printf("HHTPD get fs %s\n", name);
+    //printf("HTTPD get fs %s\n", name);
+    memset(file, 0, sizeof(struct wfs_file));
     /* this example only provides one file */
     if (strcmp(name, "/index.html") == 0)
     {
         /* initialize fs_file correctly */
-        memset(file, 0, sizeof(struct wfs_file));
-        file->pextension = malloc(sizeof(generated_html));
+        file->pextension = malloc(sizeof(index_page));
         if (file->pextension != nullptr)
         {
             /* instead of doing memcpy, you would generate e.g. a JSON here */
-            memcpy(file->pextension, generated_html, sizeof(generated_html));
+            memcpy(file->pextension, index_page, sizeof(index_page));
             file->data = (const char *)file->pextension;
-            file->len = sizeof(generated_html) - 1; /* don't send the trailing 0 */
+            file->len = sizeof(index_page) - 1; /* don't send the trailing 0 */
             file->index = file->len;
             /* allow persisteng connections */
             file->flags = FS_FILE_FLAGS_HEADER_PERSISTENT;
@@ -131,21 +252,77 @@ int wfs_open_custom(struct wfs_file *file, const char *name, int n_params, char 
             return 1;
         } 
     }
+    else if (strcmp(name, "/settings.html") == 0)
+    {
+        /* initialize fs_file correctly */
+        file->pextension = malloc(sizeof(settings_page));
+        if (file->pextension != nullptr)
+        {
+            /* instead of doing memcpy, you would generate e.g. a JSON here */
+            memcpy(file->pextension, settings_page, sizeof(settings_page));
+            file->data = (const char *)file->pextension;
+            file->len = sizeof(settings_page) - 1; /* don't send the trailing 0 */
+            file->index = file->len;
+            /* allow persisteng connections */
+            file->flags = FS_FILE_FLAGS_HEADER_PERSISTENT;
+            file->content_type = HTTP_HDR_HTML;
+            return 1;
+        } 
+    }
+    else if (strcmp(name, "/update.html") == 0)
+    {
+        /* initialize fs_file correctly */
+        file->pextension = ota_get_update_page("Clock");
+        if (file->pextension != nullptr)
+        {
+            file->data = (const char *)file->pextension;
+            file->len = strlen(file->data);
+            file->index = file->len;
+            /* allow persisteng connections */
+            file->flags = FS_FILE_FLAGS_HEADER_PERSISTENT;
+            file->content_type = HTTP_HDR_HTML;
+            return 1;
+        } 
+    }
+    else if (strcmp(name, "/restart.html") == 0)
+    {
+        /* initialize fs_file correctly */
+        file->pextension = malloc(sizeof(restart_page_head) + sizeof(restart_page_tail) + 32);
+        if (file->pextension != nullptr)
+        {
+            /* instead of doing memcpy, you would generate e.g. a JSON here */
+            size_t off = 0;
+            memcpy(file->pextension, restart_page_head, sizeof(restart_page_head) - 1);
+            off += sizeof(restart_page_head) - 1;
+            memcpy((char *)file->pextension + off, "Restarting", 10);
+            off += 10;
+            memcpy((char *)file->pextension + off, restart_page_tail, sizeof(restart_page_tail) - 1);
+            off += sizeof(restart_page_tail) - 1;
+            file->data = (const char *)file->pextension;
+            file->len = off;
+            file->index = file->len;
+            /* allow persisteng connections */
+            file->flags = FS_FILE_FLAGS_HEADER_PERSISTENT;
+            file->content_type = HTTP_HDR_HTML;
+            add_alarm_in_ms(1000, reset_now, nullptr, true);
+            return 1;
+        } 
+    }
     else if (strcmp(name, "/time") == 0)
     {
-        memset(file, 0, sizeof(struct wfs_file));
         file->pextension = malloc(128);
         if (file->pextension != nullptr)
         {
             struct tm tmbuf;
             localtime_get_time(&tmbuf);
-            snprintf((char *)file->pextension, 128, "{ \"time\": \"%02d/%02d/%04d %02d:%02d:%02d\", \"zone\": \"%s\"}\n", 
-                tmbuf.tm_mday, tmbuf.tm_mon + 1, tmbuf.tm_year + 1900, tmbuf.tm_hour, tmbuf.tm_min, tmbuf.tm_sec, localtime_get_zone_name());
+            snprintf((char *)file->pextension, 128, "{ \"time\": \"%02d/%02d/%04d %02d:%02d:%02d\", \"weekday\": \"%s\", \"zone\": \"%s\"}\n", 
+                tmbuf.tm_mon + 1, tmbuf.tm_mday, tmbuf.tm_year + 1900, tmbuf.tm_hour, tmbuf.tm_min, tmbuf.tm_sec, weekday_string(tmbuf.tm_wday), localtime_get_zone_name());
             file->data = (const char *)file->pextension;
             file->len = strlen(file->data);
             file->index = file->len;
             file->flags = FS_FILE_FLAGS_HEADER_PERSISTENT;
             file->content_type = HTTP_HDR_JSON;
+            prefs_load();
             return 1;
         }
     }
@@ -158,14 +335,14 @@ int wfs_open_custom(struct wfs_file *file, const char *name, int n_params, char 
             const char *z = micro_tz_db_get_zone(i);
             sz += strlen(z) + 3;
         }
-        memset(file, 0, sizeof(struct wfs_file));
-        file->pextension = malloc(sz + 5);
+        file->pextension = malloc(sz + 6);
         if (file->pextension == nullptr)
-            printf("out of mem %zd\n", sz + 5);
+            printf("out of mem %zd\n", sz + 6);
         if (file->pextension != nullptr)
         {
             char *ptr = (char *)file->pextension;
             *ptr++ = '[';
+            const char *current = localtime_get_zone_name();
             for (int i = 0; i < n; ++i)
             {
                 const char *z = micro_tz_db_get_zone(i);
@@ -174,6 +351,10 @@ int wfs_open_custom(struct wfs_file *file, const char *name, int n_params, char 
                     *ptr++ = ',';
                 }
                 *ptr++ = '"';
+                if (strcmp(z, current) == 0)
+                {
+                    *ptr++ = '*';
+                }
                 strcpy(ptr, z);
                 ptr += strlen(z);
                 *ptr++ = '"';
@@ -192,11 +373,61 @@ int wfs_open_custom(struct wfs_file *file, const char *name, int n_params, char 
     }
     else if (strcmp(name, "/setzone") == 0)
     {
-        printf("setzone\n");
+        //printf("setzone\n");
+        bool ok = false;
         for (int i = 0; i < n_params; ++i)
         {
             printf(" %d %s %s\n", i, params[i], values[i]);
+            if (strcmp(params[i], "z") == 0)
+            {
+                ok = localtime_set_zone_name(values[i]);
+                if (ok)
+                    prefs_save();
+                break;
+            }
         }
+
+        file->data = ok ? "OK" : "NOCHANGE";
+        file->len = strlen(file->data);
+        file->index = file->len;
+        file->flags = FS_FILE_FLAGS_HEADER_PERSISTENT;
+        file->content_type = HTTP_HDR_TEXT;
+        return 1;
+    }
+    else if (strcmp(name, "/status") == 0)
+    {
+        extern uint8_t __flash_binary_start;
+        extern uint8_t __flash_binary_end;
+        printf("base %p start %p end %p\n", XIP_BASE, &__flash_binary_start, &__flash_binary_end);
+    }
+    else if (strcmp(name, "/brightness") == 0)
+    {
+        bool ok = false;
+        for (int i = 0; i < n_params; ++i)
+        {
+            if (strcmp(params[i], "v") == 0)
+            {
+                char *end;
+                unsigned long val = strtoul(values[i], &end, 10);
+                if (*end == '\0')
+                {
+                    ok = true;
+                    ht16k33_set_brightness(val);
+                    printf("set brightness %lu\n", val);
+                }
+                break;
+            }
+        }
+        file->data = ok ? "OK" : "NOCHANGE";
+        file->len = strlen(file->data);
+        file->index = file->len;
+        file->flags = FS_FILE_FLAGS_HEADER_PERSISTENT;
+        file->content_type = HTTP_HDR_TEXT;
+        return 1;
+    }
+    else
+    {
+        printf("HTTPD unhandled fs %s\n", name);
     }
 
     return 0;

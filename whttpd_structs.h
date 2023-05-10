@@ -71,6 +71,7 @@ static const char *const g_psHTTPHeaderStrings[] = {
 #define HTTP_HDR_PDF            HTTP_CONTENT_TYPE("application/pdf")
 #define HTTP_HDR_JSON           HTTP_CONTENT_TYPE("application/json")
 #define HTTP_HDR_CSV            HTTP_CONTENT_TYPE("text/csv")
+#define HTTP_HDR_TEXT           HTTP_CONTENT_TYPE("text/plain")
 #define HTTP_HDR_TSV            HTTP_CONTENT_TYPE("text/tsv")
 #define HTTP_HDR_SVG            HTTP_CONTENT_TYPE("image/svg+xml")
 #define HTTP_HDR_SVGZ           HTTP_CONTENT_TYPE_ENCODING("image/svg+xml", "gzip")

@@ -470,21 +470,42 @@ static int tz_name_cmp(const char * target, const char * other) {
   return lower(*target) - lower(*other);
 }
 
-const char *micro_tz_db_get_posix_str(const char *name) {
+static int get_index(const char *name)
+{
   int lo = 0, hi = sizeof(micro_tz_db_tzs) / sizeof(micro_tz_db_pair);
   while (lo < hi) {
     int mid = (lo + hi) / 2;
     micro_tz_db_pair mid_pair = micro_tz_db_tzs[mid];
     int comparison = tz_name_cmp(name, mid_pair.name);
     if (comparison == 0) {
-      return mid_pair.posix_str;
+      return mid;
     } else if (comparison < 0) {
       hi = mid;
     } else {
       lo = mid + 1;
     }
   }
-  return NULL;
+  return -1;
+}
+
+const char *micro_tz_db_get_posix_str(const char *name) 
+{
+  int index = get_index(name);
+  if (index < 0)
+  {
+    return NULL;
+  }
+  return micro_tz_db_tzs[index].posix_str;
+}
+
+const char *micro_tz_db_get_safe_name(const char *name) 
+{
+  int index = get_index(name);
+  if (index < 0)
+  {
+    return NULL;
+  }
+  return micro_tz_db_tzs[index].name;
 }
 
 int micro_tz_db_get_zone_count()

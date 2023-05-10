@@ -6,6 +6,9 @@ project(picow_clock C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
+set(PICOWOTA_WIFI_SSID "BAREVA")
+set(PICOWOTA_WIFI_PASS "cambridgea")
+
 set(PICO_BOARD pico_w)
 
 pico_sdk_init()
@@ -14,13 +17,17 @@ add_executable(picow_clock
         picow_clock.cxx
         localtime.cxx
         ht16k33_i2c.cxx
+        preferences.cxx
+        ota.cxx
         timegm.c
-        zones.c
+        zones.cxx
         whttpd_pages.cxx
-        whttpd.c
-        wfs.c
+        whttpd_post.cxx
+        whttpd.cxx
+        wfs.cxx
         )
-add_compile_options(-Wall -fdiagnostics-color=never)
+
+target_compile_options(picow_clock PUBLIC $<$<COMPILE_LANGUAGE:C>:-Wall -fdiagnostics-color=never -include hostname_config.h -dD -D "CYW43_HOST_NAME=get_net_hostname()" >)
 
 target_include_directories(picow_clock PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
@@ -31,11 +38,12 @@ target_link_libraries(picow_clock
         hardware_rtc
         pico_cyw43_arch_lwip_threadsafe_background
         pico_stdlib
-        pico_lwip_http
         )
 
 pico_enable_stdio_usb(picow_clock 1)
 pico_enable_stdio_uart(picow_clock 1)
 
+pico_set_linker_script(picow_clock ${CMAKE_CURRENT_LIST_DIR}/memmap.ld)
 pico_add_extra_outputs(picow_clock)
-        
+#picowota_build_standalone(picow_clock)
+#picowota_build_combined(picow_clock)        

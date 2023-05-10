@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include "localtime.h"
+#include "preferences.h"
 #include "timegm.h"
 #include "zones.h"
 #include "hardware/rtc.h"
@@ -18,7 +19,7 @@ extern bool localtime_set_zone_name(const char *name)
     {
         return false;
     }
-    zone = name;
+    zone = micro_tz_db_get_safe_name(name);
     setenv("TZ", posix_str, 1);
     tzset();
     return true;

@@ -10,6 +10,7 @@
 
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
+#include "pico/unique_id.h"
 #include "hardware/rtc.h"
 
 #include "lwip/dns.h"
@@ -19,6 +20,7 @@
 
 #include "ht16k33.h"
 #include "localtime.h"
+#include "preferences.h"
 #include "timegm.h"
 #include "wifi_details.h"
 
@@ -71,6 +73,7 @@ static void ntp_result(NTP_T* state, int status, time_t *result)
         cancel_alarm(state->ntp_resend_alarm);
         state->ntp_resend_alarm = 0;
     }
+
     state->ntp_test_time = make_timeout_time_ms(NTP_TEST_TIME);
     state->dns_request_sent = false;
 }
@@ -171,7 +174,8 @@ static void run_ntp_test(void)
     NTP_T *state = ntp_init();
     if (!state)
         return;
-        bool dots = true;
+    bool dots = true;
+    int print_tick = 0;
     while(true) 
     {
         if (absolute_time_diff_us(get_absolute_time(), state->ntp_test_time) < 0 && !state->dns_request_sent)
@@ -198,23 +202,50 @@ static void run_ntp_test(void)
                 ntp_result(state, -1, NULL);
             }
         }
+
         sleep_ms(1000);
         datetime_t t;
         rtc_get_datetime(&t);
-        printf("UTC time: %02d/%02d/%04d %02d:%02d:%02d\n", t.day, t.month, t.year,
-               t.hour, t.min, t.sec);
         struct tm tmbuf;
         localtime_get_time(&tmbuf);
-        printf("localtime says: %02d/%02d/%04d %02d:%02d:%02d\n", tmbuf.tm_mday, tmbuf.tm_mon + 1, tmbuf.tm_year + 1900,
-               tmbuf.tm_hour, tmbuf.tm_min, tmbuf.tm_sec);
         char dbuf[6];
         snprintf(dbuf, sizeof(dbuf), "%2d %02d", tmbuf.tm_hour, tmbuf.tm_min);
+        if (tmbuf.tm_hour < 8 || tmbuf.tm_hour >= 20)
+        {
+            ht16k33_set_brightness(0);
+        }
+        else
+        {
+            ht16k33_set_brightness(6);
+        }
+
         ht16k33_display_string(dbuf);
         ht16k33_display_set(2, dots ? 0xff : 0);
         dots = !dots;
 
+        ++print_tick;
+        if (print_tick == 10)        
+        {
+            printf("UTC time: %02d/%02d/%04d %02d:%02d:%02d\n", t.day, t.month, t.year,
+                t.hour, t.min, t.sec);
+            printf("localtime says: %02d/%02d/%04d %02d:%02d:%02d\n", tmbuf.tm_mday, tmbuf.tm_mon + 1, tmbuf.tm_year + 1900,
+                tmbuf.tm_hour, tmbuf.tm_min, tmbuf.tm_sec);
+            print_tick = 0;
+        }
     }
     free(state);
+}
+
+static uint16_t small_id;
+static char hostname[20];
+extern "C" const char *get_net_hostname()
+{
+    if (hostname[0] == '\0')
+    {
+        snprintf(hostname, sizeof(hostname), "picow_clock_%u", small_id);
+    }
+
+    return hostname;
 }
 
 int main() 
@@ -222,7 +253,20 @@ int main()
     stdio_init_all();
 
     ht16k33_init();
+    ht16k33_set_brightness(6);
     ht16k33_display_string("-- --");
+
+    printf("init\n");
+    
+    pico_unique_board_id_t id;
+
+    pico_get_unique_board_id(&id);
+
+    for (int i = 0; i < sizeof(id.id) / 2; ++i)
+    {
+        uint16_t x = (id.id[i * 2 + 1] << 8) | id.id[i * 2];
+        small_id += x;
+    }
 
     if (cyw43_arch_init())
     {
@@ -238,8 +282,17 @@ int main()
         return 1;
     }
 
+    printf("connected to wifi\n");
+    
     rtc_init();
-    localtime_set_zone_name("America/Los_Angeles");
+    if (prefs_load())
+    {
+        localtime_set_zone_name(prefs.timezone);
+    }
+    else
+    {
+        localtime_set_zone_name("America/Los_Angeles");
+    }
     whttpd_init();
     run_ntp_test();
     cyw43_arch_deinit();

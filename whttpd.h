@@ -183,8 +183,6 @@ void http_set_ssi_handler(tSSIHandler pfnSSIHandler,
 
 #endif /* LWIP_HTTPD_SSI */
 
-#if LWIP_HTTPD_SUPPORT_POST
-
 /* These functions must be implemented by the application */
 
 /**
@@ -207,9 +205,9 @@ void http_set_ssi_handler(tSSIHandler pfnSSIHandler,
  * @return ERR_OK: Accept the POST request, data may be passed in
  *         another err_t: Deny the POST request, send back 'bad request'.
  */
-err_t httpd_post_begin(void *connection, const char *uri, const char *http_request,
-                       u16_t http_request_len, int content_len, char *response_uri,
-                       u16_t response_uri_len, u8_t *post_auto_wnd);
+err_t whttpd_post_begin(void *connection, const char *uri, const char *http_request,
+                        u16_t http_request_len, int content_len, char *response_uri,
+                        u16_t response_uri_len, u8_t *post_auto_wnd);
 
 /**
  * @ingroup httpd
@@ -221,7 +219,7 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
  * @return ERR_OK: Data accepted.
  *         another err_t: Data denied, http_post_get_response_uri will be called.
  */
-err_t httpd_post_receive_data(void *connection, struct pbuf *p);
+err_t whttpd_post_receive_data(void *connection, struct pbuf *p);
 
 /**
  * @ingroup httpd
@@ -234,13 +232,11 @@ err_t httpd_post_receive_data(void *connection, struct pbuf *p);
  * @param response_uri Filename of response file, to be filled when denying the request
  * @param response_uri_len Size of the 'response_uri' buffer.
  */
-void httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len);
+void whttpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len);
 
 #if LWIP_HTTPD_POST_MANUAL_WND
 void httpd_post_data_recved(void *connection, u16_t recved_len);
 #endif /* LWIP_HTTPD_POST_MANUAL_WND */
-
-#endif /* LWIP_HTTPD_SUPPORT_POST */
 
 void whttpd_init(void);
 
