@@ -168,12 +168,13 @@ static NTP_T* ntp_init(void)
     return state;
 }
 
-// Runs ntp test forever
-static void run_ntp_test(void)
+// Runs ntp test until we lose wifi connection when it returns true 
+// Returns false if can't initialize
+static bool run_ntp_test(void)
 {
     NTP_T *state = ntp_init();
     if (!state)
-        return;
+        return false;
     bool dots = true;
     int print_tick = 0;
     while(true) 
@@ -198,9 +199,17 @@ static void run_ntp_test(void)
             }
             else if (err != ERR_INPROGRESS)
             { // ERR_INPROGRESS means expect a callback
-                printf("dns request failed\n");
+                printf("dns request failed %d\n", err);
                 ntp_result(state, -1, NULL);
             }
+        }
+
+        cyw43_arch_lwip_begin();
+        int link_status = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA);
+        cyw43_arch_lwip_end();
+        if (link_status != CYW43_LINK_UP)
+        {
+            return true;
         }
 
         sleep_ms(1000);
@@ -234,6 +243,7 @@ static void run_ntp_test(void)
         }
     }
     free(state);
+    return false;
 }
 
 static uint16_t small_id;
@@ -246,6 +256,17 @@ extern "C" const char *get_net_hostname()
     }
 
     return hostname;
+}
+
+// step must be 0 to 6
+static void show_busy(int step)
+{
+    uint16_t pattern = 1 << step;
+    ht16k33_display_set(0, pattern);
+    ht16k33_display_set(1, pattern);
+    ht16k33_display_set(2, 0);
+    ht16k33_display_set(3, pattern);
+    ht16k33_display_set(4, pattern);
 }
 
 int main() 
@@ -274,16 +295,6 @@ int main()
         return 1;
     }
 
-    cyw43_arch_enable_sta_mode();
-
-    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 10000))
-    {
-        printf("failed to connect\n");
-        return 1;
-    }
-
-    printf("connected to wifi\n");
-    
     rtc_init();
     if (prefs_load())
     {
@@ -293,8 +304,38 @@ int main()
     {
         localtime_set_zone_name("America/Los_Angeles");
     }
-    whttpd_init();
-    run_ntp_test();
+
+    for (;;)
+    {
+        cyw43_arch_enable_sta_mode();
+
+        int busy_step = 0;
+        for (;;)
+        {
+            int err = cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 10000);
+            if (err == 0)
+            {
+                break;
+            }
+            printf("failed to connect %d\n", err);
+            show_busy(busy_step);
+            if (++busy_step == 6)
+            {
+                busy_step = 0;
+            }
+        }
+
+        printf("connected to wifi\n");
+        
+        whttpd_init();
+
+        // not sure this reconnect logic is right yet
+        if (run_ntp_test())
+        {
+            continue;
+        }
+    }
+
     cyw43_arch_deinit();
     return 0;
 }
