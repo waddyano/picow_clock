@@ -41,7 +41,7 @@ target_link_libraries(picow_clock
         )
 
 pico_enable_stdio_usb(picow_clock 1)
-pico_enable_stdio_uart(picow_clock 1)
+pico_enable_stdio_uart(picow_clock 0)
 
 pico_set_linker_script(picow_clock ${CMAKE_CURRENT_LIST_DIR}/memmap.ld)
 pico_add_extra_outputs(picow_clock)
