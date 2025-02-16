@@ -27,7 +27,7 @@ add_executable(picow_clock
         wfs.cxx
         )
 
-target_compile_options(picow_clock PUBLIC $<$<COMPILE_LANGUAGE:C>:-Wall -fdiagnostics-color=never -include hostname_config.h -dD -D "CYW43_HOST_NAME=get_net_hostname()" >)
+target_compile_options(picow_clock PUBLIC $<$<COMPILE_LANGUAGE:C,CXX>:-Wall -fdiagnostics-color=never -include hostname_config.h -dD -D "CYW43_HOST_NAME=get_net_hostname()" >)
 
 target_include_directories(picow_clock PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}

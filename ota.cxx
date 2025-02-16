@@ -4,8 +4,6 @@
 #include <cstring>
 #include "ota.h"
 
-static char title[64] = "Firmware Update";
-
 // Note this has two %s substitutions bot for the title
 static const char *update_page = R"!(<html>
 	<head>

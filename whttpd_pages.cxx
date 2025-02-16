@@ -398,7 +398,7 @@ int wfs_open_custom(struct wfs_file *file, const char *name, int n_params, char 
     {
         extern uint8_t __flash_binary_start;
         extern uint8_t __flash_binary_end;
-        printf("base %p start %p end %p\n", XIP_BASE, &__flash_binary_start, &__flash_binary_end);
+        printf("base %x start %p end %p\n", XIP_BASE, &__flash_binary_start, &__flash_binary_end);
     }
     else if (strcmp(name, "/brightness") == 0)
     {

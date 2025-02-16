@@ -15,7 +15,7 @@ void prefs_save()
 {
     int myDataSize = sizeof(prefs);
     prefs.magic = MAGIC;
-    printf("set magic to %x\n", MAGIC);
+    printf("set magic to %lx\n", MAGIC);
 
     strcpy(prefs.timezone, localtime_get_zone_name());
     

@@ -86,7 +86,7 @@ whttpd_post_begin(void *connection, const char *uri, const char *http_request,
 static void flash_page()
 {
   uint32_t ota_offset = (uint32_t)&__flash_ota_start - XIP_BASE;
-  printf("flash a page @%u\n", content_offset);
+  printf("flash a page @%lu\n", content_offset);
   critical_section_enter_blocking(&cs);
   flash_range_erase(ota_offset + content_offset, FLASH_SECTOR_SIZE);
   flash_range_program(ota_offset + content_offset, page_buffer, FLASH_SECTOR_SIZE);
@@ -114,7 +114,7 @@ whttpd_post_receive_data(void *connection, struct pbuf *p)
       {
         to_copy = sizeof(page_buffer) - page_offset;
       }
-      printf("copy %u\n", to_copy);
+      printf("copy %lu\n", to_copy);
       memcpy(page_buffer + page_offset, p->payload, to_copy);
       left -= to_copy;
       page_offset += to_copy;
@@ -138,13 +138,13 @@ void
 whttpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len)
 {
   /* default page is "login failed" */
-  printf("post done offset %u of %u\n", content_offset, content_length);
+  printf("post done offset %lu of %u\n", content_offset, content_length);
   if (page_offset > 0)
   {
     memset(page_buffer + page_offset, 0, sizeof(page_buffer) - page_offset);
     flash_page();
   }
-  printf("last flash done offset %u of %u\n", content_offset, content_length);
+  printf("last flash done offset %lu of %u\n", content_offset, content_length);
   snprintf(response_uri, response_uri_len, "/loginfail.html");
   if (current_connection == connection) {
     if (valid_connection == connection) {

@@ -12,6 +12,7 @@
 #include "pico/cyw43_arch.h"
 #include "pico/unique_id.h"
 #include "hardware/rtc.h"
+#include "hardware/watchdog.h"
 
 #include "lwip/dns.h"
 #include "lwip/pbuf.h"
@@ -47,6 +48,8 @@ static int dotw(int d, int m, int y)
     return (d += m < 3 ? y-- : y - 2, 23*m/9 + d + 4 + y/4- y/100 + y/400)%7;
 }
 
+static absolute_time_t last_ntp_result_time;
+
 // Called with results of operation
 static void ntp_result(NTP_T* state, int status, time_t *result) 
 {
@@ -64,6 +67,8 @@ static void ntp_result(NTP_T* state, int status, time_t *result)
         t.hour  = utc->tm_hour;
         t.min   = utc->tm_min;
         t.sec   = utc->tm_sec;
+
+        last_ntp_result_time = get_absolute_time();
 
         rtc_set_datetime(&t);
     }
@@ -168,16 +173,37 @@ static NTP_T* ntp_init(void)
     return state;
 }
 
-// Runs ntp test until we lose wifi connection when it returns true 
-// Returns false if can't initialize
-static bool run_ntp_test(void)
+#if 0 // for debug
+static const char* link_status_string(int status)
+{
+    switch (status) {
+    case CYW43_LINK_DOWN:
+        return "link down";
+    case CYW43_LINK_JOIN:
+        return "joining";
+    case CYW43_LINK_NOIP:
+        return "no ip";
+    case CYW43_LINK_UP:
+        return "link up";
+    case CYW43_LINK_FAIL:
+        return "link fail";
+    case CYW43_LINK_NONET:
+        return "network fail";
+    case CYW43_LINK_BADAUTH:
+        return "bad auth";
+    }
+    return "unknown";
+}
+#endif
+
+static void ntp_loop(void)
 {
     NTP_T *state = ntp_init();
     if (!state)
-        return false;
+        return;
     bool dots = true;
     int print_tick = 0;
-    while(true) 
+    for (;;)
     {
         if (absolute_time_diff_us(get_absolute_time(), state->ntp_test_time) < 0 && !state->dns_request_sent)
         {
@@ -209,7 +235,8 @@ static bool run_ntp_test(void)
         cyw43_arch_lwip_end();
         if (link_status != CYW43_LINK_UP)
         {
-            return true;
+            printf("link has gone down %d\n", link_status);
+            return;
         }
 
         sleep_ms(1000);
@@ -235,15 +262,15 @@ static bool run_ntp_test(void)
         ++print_tick;
         if (print_tick == 10)        
         {
-            printf("UTC time: %02d/%02d/%04d %02d:%02d:%02d\n", t.day, t.month, t.year,
-                t.hour, t.min, t.sec);
+            auto delta = absolute_time_diff_us(last_ntp_result_time, get_absolute_time());
+            printf("UTC time: %02d/%02d/%04d %02d:%02d:%02d - last sync %lld secs ago\n", t.day, t.month, t.year,
+                t.hour, t.min, t.sec, delta / 1000000);
             printf("localtime says: %02d/%02d/%04d %02d:%02d:%02d\n", tmbuf.tm_mday, tmbuf.tm_mon + 1, tmbuf.tm_year + 1900,
                 tmbuf.tm_hour, tmbuf.tm_min, tmbuf.tm_sec);
             print_tick = 0;
         }
+        watchdog_update();
     }
-    free(state);
-    return false;
 }
 
 static uint16_t small_id;
@@ -283,7 +310,7 @@ int main()
 
     pico_get_unique_board_id(&id);
 
-    for (int i = 0; i < sizeof(id.id) / 2; ++i)
+    for (size_t i = 0; i < sizeof(id.id) / 2; ++i)
     {
         uint16_t x = (id.id[i * 2 + 1] << 8) | id.id[i * 2];
         small_id += x;
@@ -305,35 +332,51 @@ int main()
         localtime_set_zone_name("America/Los_Angeles");
     }
 
+    cyw43_arch_enable_sta_mode();
+
+    // On startup we have to wait for wifi to get a ntp request in
+    int busy_step = 0;
     for (;;)
     {
-        cyw43_arch_enable_sta_mode();
-
-        int busy_step = 0;
-        for (;;)
+        int err = cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 10000);
+        if (err == 0)
         {
-            int err = cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 10000);
-            if (err == 0)
-            {
-                break;
-            }
-            printf("failed to connect %d\n", err);
+            break;
+        }
+        show_busy(busy_step);
+        if (++busy_step == 6)
+        {
+            busy_step = 0;
+        }
+    }
+
+    printf("connected to wifi\n");
+    whttpd_init();
+    watchdog_enable(3000, 0);
+
+    busy_step = 0;
+
+    for (;;)
+    {
+        // ntp_loop exits if the link goes down so we wait until it is up again. 
+        int link_status = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA);
+        if (link_status != CYW43_LINK_UP)
+        {
+            printf("wifi is down\n");
             show_busy(busy_step);
+            for (int i = 0; i < 5; i++)
+            {
+                sleep_ms(1000);
+                watchdog_update();
+            }
             if (++busy_step == 6)
             {
                 busy_step = 0;
             }
-        }
-
-        printf("connected to wifi\n");
-        
-        whttpd_init();
-
-        // not sure this reconnect logic is right yet
-        if (run_ntp_test())
-        {
             continue;
         }
+        
+        ntp_loop();
     }
 
     cyw43_arch_deinit();
